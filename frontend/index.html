@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ER AutoPredict — Weather & Events Integration</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root {
+  --bg:        #0a0e14;
+  --surface:   #111720;
+  --surface2:  #161e2a;
+  --surface3:  #1c2638;
+  --border:    rgba(99,160,255,0.12);
+  --border2:   rgba(99,160,255,0.22);
+  --text:      #e8edf5;
+  --muted:     #6b7a90;
+  --accent:    #3b8bff;
+  --accent2:   #00d4aa;
+  --warn:      #f5a623;
+  --danger:    #ff4d6a;
+  --low:       #00d4aa;
+  --med:       #f5a623;
+  --high:      #ff4d6a;
+  --purple:    #a78bfa;
+  --radius:    12px;
+  --mono:      'IBM Plex Mono', monospace;
+  --sans:      'IBM Plex Sans', sans-serif;
+}
+
+body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height:100vh; }
+
+body::before {
+  content:''; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px);
+}
+
+/* HEADER */
+.header {
+  position:sticky; top:0; z-index:200;
+  background: rgba(10,14,20,0.95);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 28px;
+  display:flex; align-items:center; justify-content:space-between; height:58px;
+}
+.logo { display:flex; align-items:center; gap:10px; }
+.logo-mark {
+  width:32px; height:32px; border-radius:8px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display:flex; align-items:center; justify-content:center;
+  font-size:15px; font-weight:700; color:#fff; letter-spacing:-1px;
+  font-family: var(--mono);
+}
+.logo-name { font-size:15px; font-weight:600; letter-spacing:-0.3px; }
+.logo-sub { font-size:11px; color:var(--muted); margin-top:1px; font-family:var(--mono); }
+.v2-badge {
+  background: linear-gradient(135deg, rgba(167,139,250,0.2), rgba(59,139,255,0.15));
+  border: 1px solid rgba(167,139,250,0.35);
+  color: var(--purple); font-size:10px; font-weight:600; font-family:var(--mono);
+  padding:3px 10px; border-radius:12px; text-transform:uppercase; letter-spacing:1px;
+  margin-left:8px;
+}
+.header-right { display:flex; align-items:center; gap:14px; }
+.auto-badge {
+  display:flex; align-items:center; gap:6px;
+  background: rgba(0,212,170,0.1); border:1px solid rgba(0,212,170,0.25);
+  color: var(--accent2); font-size:11px; font-weight:600; font-family:var(--mono);
+  padding:5px 12px; border-radius:20px; text-transform:uppercase; letter-spacing:0.5px;
+}
+.pulse-dot { width:6px; height:6px; border-radius:50%; background:var(--accent2); animation:pulse 1.6s infinite; }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.8)} }
+.last-update { font-family:var(--mono); font-size:11px; color:var(--muted); }
+
+/* MAIN */
+.main { position:relative; z-index:1; max-width:1240px; margin:0 auto; padding:24px 20px 40px; }
+
+/* MODEL STATUS BANNER */
+.model-banner {
+  border-radius:var(--radius); padding:14px 20px; margin-bottom:18px;
+  background:rgba(59,139,255,0.08); border:1px solid rgba(59,139,255,0.25);
+  display:flex; align-items:center; justify-content:space-between; gap:16px;
+  font-size:13px;
+}
+.model-banner.trained { background:rgba(0,212,170,0.07); border-color:rgba(0,212,170,0.25); }
+.model-banner.error   { background:rgba(255,77,106,0.07); border-color:rgba(255,77,106,0.25); }
+.upload-btn {
+  background: var(--accent); color:#fff; border:none; padding:8px 18px;
+  border-radius:8px; cursor:pointer; font-family:var(--mono); font-size:12px;
+  font-weight:600; transition:opacity 0.2s; text-transform:uppercase; letter-spacing:0.5px;
+  flex-shrink:0;
+}
+.upload-btn:hover { opacity:0.85; }
+#csvUpload { display:none; }
+
+/* ALERT STRIP */
+.alert-strip {
+  border-radius:var(--radius); padding:16px 22px;
+  margin-bottom:22px; display:flex; align-items:flex-start; gap:16px;
+  border: 1px solid; transition: all 0.5s; animation: slideIn 0.4s ease;
+}
+@keyframes slideIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+.alert-strip.low  { background:rgba(0,212,170,0.07); border-color:rgba(0,212,170,0.3); }
+.alert-strip.med  { background:rgba(245,166,35,0.07); border-color:rgba(245,166,35,0.3); }
+.alert-strip.high { background:rgba(255,77,106,0.09); border-color:rgba(255,77,106,0.35); box-shadow:0 0 30px rgba(255,77,106,0.1); }
+.alert-icon-wrap { font-size:24px; margin-top:1px; }
+.alert-title { font-size:15px; font-weight:600; margin-bottom:3px; }
+.alert-desc  { font-size:13px; color:var(--muted); line-height:1.6; }
+.alert-strip.high .alert-title { color:var(--danger); }
+.alert-strip.med  .alert-title { color:var(--warn); }
+.alert-strip.low  .alert-title { color:var(--low); }
+
+/* GRID */
+.grid-top  { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }
+.grid-mid  { display:grid; grid-template-columns:1.6fr 1fr; gap:18px; margin-bottom:18px; }
+.grid-bot  { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:18px; }
+.grid-we   { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:18px; }
+
+/* CARDS */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px;
+}
+.card.highlight-weather { border-color: rgba(59,139,255,0.3); }
+.card.highlight-events  { border-color: rgba(167,139,250,0.3); }
+.card-hd {
+  font-size:11px; font-weight:600; text-transform:uppercase;
+  letter-spacing:1px; color:var(--muted); margin-bottom:14px;
+  font-family:var(--mono); display:flex; align-items:center; gap:8px;
+}
+.card-hd .dot        { width:5px; height:5px; border-radius:50%; background:var(--accent); }
+.card-hd .dot-purple { width:5px; height:5px; border-radius:50%; background:var(--purple); }
+.card-hd .new-tag {
+  background: rgba(167,139,250,0.15); border:1px solid rgba(167,139,250,0.3);
+  color:var(--purple); font-size:9px; padding:2px 7px; border-radius:6px;
+  letter-spacing:0.5px;
+}
+
+/* METRIC CARDS */
+.metric { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; position:relative; overflow:hidden; }
+.metric::after { content:''; position:absolute; top:0; left:0; right:0; height:2px; }
+.metric.m-blue::after   { background:var(--accent); }
+.metric.m-teal::after   { background:var(--accent2); }
+.metric.m-warn::after   { background:var(--warn); }
+.metric.m-danger::after { background:var(--danger); }
+.metric.m-purple::after { background:var(--purple); }
+.metric-label { font-size:11px; color:var(--muted); font-family:var(--mono); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:8px; }
+.metric-val   { font-size:30px; font-weight:600; letter-spacing:-1.5px; font-family:var(--mono); line-height:1; }
+.metric-sub   { font-size:12px; color:var(--muted); margin-top:7px; }
+
+/* LIVE DATA PANEL */
+.live-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.live-item {
+  background:var(--surface2); border:1px solid var(--border);
+  border-radius:9px; padding:13px 15px;
+  display:flex; align-items:center; gap:12px;
+}
+.live-icon { font-size:20px; }
+.live-label { font-size:11px; color:var(--muted); font-family:var(--mono); text-transform:uppercase; letter-spacing:0.5px; }
+.live-value { font-size:16px; font-weight:600; font-family:var(--mono); margin-top:3px; }
+
+/* WEATHER PANEL */
+.weather-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:14px; }
+.weather-item {
+  background:var(--surface2); border:1px solid var(--border); border-radius:9px;
+  padding:12px 14px; display:flex; align-items:center; gap:10px;
+}
+.weather-item .wi-icon  { font-size:22px; }
+.weather-item .wi-label { font-size:10px; color:var(--muted); font-family:var(--mono); text-transform:uppercase; letter-spacing:0.5px; }
+.weather-item .wi-value { font-size:17px; font-weight:600; font-family:var(--mono); margin-top:2px; }
+
+.severity-bar-wrap { margin-top:6px; }
+.severity-label { font-size:11px; color:var(--muted); font-family:var(--mono); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
+.severity-track { height:8px; background:var(--surface3); border-radius:4px; overflow:hidden; }
+.severity-fill  { height:8px; border-radius:4px; transition:width 1s ease; }
+
+/* EVENTS PANEL */
+.event-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.event-pill {
+  font-size:11px; font-weight:600; font-family:var(--mono); padding:4px 12px;
+  border-radius:20px; text-transform:uppercase; letter-spacing:0.5px;
+}
+.event-list { display:flex; flex-direction:column; gap:9px; }
+.event-row {
+  background:var(--surface2); border:1px solid var(--border); border-radius:9px;
+  padding:11px 14px; display:flex; align-items:center; gap:12px;
+}
+.event-row .er-icon   { font-size:20px; }
+.event-row .er-name   { font-size:13px; font-weight:500; }
+.event-row .er-impact { font-size:11px; color:var(--muted); margin-top:2px; font-family:var(--mono); }
+.event-row .er-score  {
+  margin-left:auto; font-family:var(--mono); font-size:13px; font-weight:600;
+  padding:3px 10px; border-radius:12px;
+}
+
+/* RISK GAUGE */
+.gauge-wrap { text-align:center; padding:10px 0; }
+.risk-score { font-size:52px; font-weight:600; font-family:var(--mono); letter-spacing:-2px; line-height:1; margin-top:6px; }
+.risk-label {
+  display:inline-block; margin-top:8px;
+  font-size:12px; font-weight:600; font-family:var(--mono);
+  padding:4px 16px; border-radius:20px; text-transform:uppercase; letter-spacing:1px;
+}
+
+/* FACTORS */
+.factor-row { display:flex; align-items:center; gap:10px; margin-bottom:11px; }
+.factor-name  { font-size:12px; font-family:var(--mono); color:var(--muted); width:120px; flex-shrink:0; }
+.factor-track { flex:1; height:5px; background:var(--surface3); border-radius:3px; }
+.factor-fill  { height:5px; border-radius:3px; transition:width 0.8s cubic-bezier(.4,0,.2,1); }
+.factor-pct   { font-family:var(--mono); font-size:11px; color:var(--muted); width:30px; text-align:right; }
+
+/* AI ANALYSIS */
+.ai-bubble {
+  background:var(--surface2); border:1px solid var(--border2);
+  border-radius:var(--radius); padding:16px 18px;
+  font-size:13px; line-height:1.75; color:var(--text);
+  position:relative; min-height:80px;
+}
+.ai-label { font-family:var(--mono); font-size:10px; color:var(--accent); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+
+/* METRICS TABLE */
+.metrics-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.metric-box {
+  background:var(--surface2); border:1px solid var(--border); border-radius:9px;
+  padding:14px 16px; text-align:center;
+}
+.metric-box .mb-val   { font-size:26px; font-weight:600; font-family:var(--mono); letter-spacing:-1px; }
+.metric-box .mb-label { font-size:11px; color:var(--muted); font-family:var(--mono); margin-top:4px; text-transform:uppercase; letter-spacing:0.5px; }
+
+/* FEATURE IMPORTANCE */
+.fi-row { display:flex; align-items:center; gap:10px; margin-bottom:9px; }
+.fi-name  { font-size:11px; font-family:var(--mono); color:var(--muted); width:140px; flex-shrink:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.fi-track { flex:1; height:5px; background:var(--surface3); border-radius:3px; }
+.fi-fill  { height:5px; border-radius:3px; }
+.fi-val   { font-family:var(--mono); font-size:10px; color:var(--muted); width:38px; text-align:right; }
+
+/* LOG */
+.log-row { display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); align-items:flex-start; font-size:12px; }
+.log-row:last-child { border-bottom:none; }
+.log-time  { font-family:var(--mono); color:var(--muted); min-width:58px; margin-top:1px; }
+.log-msg   { color:var(--text); line-height:1.5; flex:1; }
+.log-badge { font-family:var(--mono); font-size:10px; font-weight:600; padding:2px 8px; border-radius:10px; text-transform:uppercase; flex-shrink:0; margin-top:1px; }
+
+/* TIPS */
+.tip-row  { display:flex; gap:12px; margin-bottom:13px; align-items:flex-start; }
+.tip-icon { font-size:16px; margin-top:2px; }
+.tip-title { font-size:13px; font-weight:600; margin-bottom:2px; }
+.tip-desc  { font-size:12px; color:var(--muted); line-height:1.5; }
+
+/* LOADING */
+.loading-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:40px; gap:16px; }
+.spinner { width:36px; height:36px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite; }
+@keyframes spin { to{transform:rotate(360deg)} }
+.loading-text { font-family:var(--mono); font-size:12px; color:var(--muted); text-align:center; }
+
+/* REFRESH BTN */
+.refresh-btn {
+  display:flex; align-items:center; gap:7px;
+  background:transparent; border:1px solid var(--border2);
+  color:var(--accent); font-family:var(--mono); font-size:12px; font-weight:500;
+  padding:8px 16px; border-radius:8px; cursor:pointer;
+  transition: all 0.2s; text-transform:uppercase; letter-spacing:0.5px;
+}
+.refresh-btn:hover { background:rgba(59,139,255,0.1); border-color:var(--accent); }
+.refresh-btn:active { transform:scale(0.97); }
+.refresh-btn.spinning .refresh-icon { animation:spin 0.8s linear infinite; display:inline-block; }
+
+/* SOURCE TAGS */
+.source-tags { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; }
+.src-tag {
+  font-family:var(--mono); font-size:10px; padding:4px 10px; border-radius:6px;
+  border:1px solid var(--border); color:var(--muted); display:flex; align-items:center; gap:5px;
+}
+.src-tag.active { border-color:rgba(0,212,170,0.35); color:var(--accent2); background:rgba(0,212,170,0.07); }
+.src-dot { width:5px; height:5px; border-radius:50%; background:var(--accent2); }
+
+/* PIPELINE */
+.pipeline {
+  display:flex; align-items:center; gap:0; margin-bottom:18px;
+  overflow-x:auto; padding:14px 18px;
+  background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius);
+}
+.pipe-step  { display:flex; flex-direction:column; align-items:center; gap:5px; min-width:80px; }
+.pipe-icon  { font-size:18px; }
+.pipe-label { font-family:var(--mono); font-size:10px; color:var(--muted); text-align:center; text-transform:uppercase; letter-spacing:0.4px; }
+.pipe-status { font-family:var(--mono); font-size:9px; padding:2px 7px; border-radius:8px; }
+.pipe-status.ok   { background:rgba(0,212,170,0.15); color:var(--accent2); }
+.pipe-status.run  { background:rgba(59,139,255,0.15); color:var(--accent); }
+.pipe-status.wait { background:rgba(107,122,144,0.15); color:var(--muted); }
+.pipe-arrow { color:var(--border2); font-size:16px; margin:0 4px; padding-bottom:20px; flex-shrink:0; }
+
+/* CHART */
+.chart-wrap { position:relative; height:210px; }
+
+/* TABS */
+.tab-row { display:flex; gap:6px; margin-bottom:16px; }
+.tab-btn {
+  font-family:var(--mono); font-size:11px; padding:6px 14px; border-radius:7px;
+  border:1px solid var(--border); background:transparent; color:var(--muted);
+  cursor:pointer; text-transform:uppercase; letter-spacing:0.5px; transition:all 0.2s;
+}
+.tab-btn.active { background:rgba(59,139,255,0.15); border-color:var(--accent); color:var(--accent); }
+
+/* HISTORY TABLE */
+.hist-table { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:11px; }
+.hist-table th { color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; padding:8px 10px; border-bottom:1px solid var(--border); text-align:left; }
+.hist-table td { padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.04); }
+.hist-table tr:hover td { background:rgba(255,255,255,0.02); }
+
+/* RESPONSIVE */
+@media(max-width:800px) {
+  .grid-top, .grid-we { grid-template-columns:1fr 1fr; }
+  .grid-mid, .grid-bot { grid-template-columns:1fr; }
+  .live-grid, .weather-grid { grid-template-columns:1fr; }
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">
+    <div class="logo-mark">ER</div>
+    <div>
+      <div class="logo-name">ER AutoPredict <span class="v2-badge"></span></div>
+      <div class="logo-sub">Model · Weather + Events Integration</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="last-update" id="lastUpdate">Initializing…</span>
+    <button class="refresh-btn" id="refreshBtn" onclick="fullRefresh()">
+      <span class="refresh-icon">↻</span> Refresh Now
+    </button>
+    <div class="auto-badge"><div class="pulse-dot"></div> Auto-Running</div>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- MODEL STATUS BANNER -->
+  <div class="model-banner" id="modelBanner">
+    <div>
+      <strong id="bannerTitle">⚙️ Checking model status…</strong>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px" id="bannerSub">Connecting</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button class="upload-btn" onclick="document.getElementById('csvUpload').click()">📂 Upload CSV</button>
+      <button class="upload-btn" style="background:var(--surface3);border:1px solid var(--border2)" onclick="retrain()">🔄 Retrain Model</button>
+      <input type="file" id="csvUpload" accept=".csv" onchange="uploadCSV(this)"/>
+    </div>
+  </div>
+
+
+  <!-- ALERT STRIP -->
+  <div class="alert-strip low" id="alertStrip">
+    <div class="alert-icon-wrap" id="alertIcon">⏳</div>
+    <div>
+      <div class="alert-title" id="alertTitle">Connecting to model backend…</div>
+      <div class="alert-desc"  id="alertDesc">Please wait pipeline initialises.</div>
+    </div>
+  </div>
+
+  <!-- TOP METRIC CARDS -->
+  <div class="grid-top">
+    <div class="metric m-blue">
+      <div class="metric-label">Temperature</div>
+      <div class="metric-val" id="metTemp">--°C</div>
+      <div class="metric-sub" id="metWeatherDesc">Loading weather…</div>
+    </div>
+    <div class="metric m-teal">
+      <div class="metric-label">Predicted Patients</div>
+      <div class="metric-val" id="metPatients">--</div>
+      <div class="metric-sub">Today's RF forecast</div>
+    </div>
+    <div class="metric m-warn">
+      <div class="metric-label">Risk Score</div>
+      <div class="metric-val" id="metRisk">--</div>
+      <div class="metric-sub">Overload probability %</div>
+    </div>
+    <div class="metric m-purple">
+      <div class="metric-label">Combined Stress</div>
+      <div class="metric-val" id="metStress">--</div>
+      <div class="metric-sub">Weather × Event index</div>
+    </div>
+  </div>
+
+  <!-- WEATHER + EVENTS -->
+  <div class="grid-we">
+
+    <!-- WEATHER CARD -->
+    <div class="card highlight-weather">
+      <div class="card-hd"><span class="dot"></span> Live Weather — Hyderabad<span class="new-tag">REAL API</span></div>
+      <div class="weather-grid">
+        <div class="weather-item">
+          <div class="wi-icon">🌡️</div>
+          <div><div class="wi-label">Temperature</div><div class="wi-value" id="w-temp">--</div></div>
+        </div>
+        <div class="weather-item">
+          <div class="wi-icon">💧</div>
+          <div><div class="wi-label">Feels Like</div><div class="wi-value" id="w-feels">--</div></div>
+        </div>
+        <div class="weather-item">
+          <div class="wi-icon">🌊</div>
+          <div><div class="wi-label">Humidity</div><div class="wi-value" id="w-hum">--</div></div>
+        </div>
+        <div class="weather-item">
+          <div class="wi-icon">🌧️</div>
+          <div><div class="wi-label">Precipitation</div><div class="wi-value" id="w-precip">--</div></div>
+        </div>
+        <div class="weather-item">
+          <div class="wi-icon">💨</div>
+          <div><div class="wi-label">Wind</div><div class="wi-value" id="w-wind">--</div></div>
+        </div>
+        <div class="weather-item">
+          <div class="wi-icon" id="w-condIcon">☁️</div>
+          <div><div class="wi-label">Condition</div><div class="wi-value" id="w-cond" style="font-size:13px">--</div></div>
+        </div>
+      </div>
+      <div class="severity-bar-wrap">
+        <div class="severity-label">Weather Severity — ER Impact Score</div>
+        <div class="severity-track"><div class="severity-fill" id="w-sev-bar" style="width:0%;background:var(--accent2)"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:5px;">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">Low impact</span>
+          <span style="font-family:var(--mono);font-size:12px;font-weight:600;" id="w-sev-label">--/10</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">High impact</span>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:var(--muted);font-family:var(--mono);line-height:1.6" id="w-insight">Weather insight loading…</div>
+    </div>
+
+    <!-- EVENTS CARD -->
+    <div class="card highlight-events">
+      <div class="card-hd"><span class="dot-purple"></span> Nearby Event Signals<span class="new-tag">NEW FEATURE</span></div>
+      <div class="event-header">
+        <div style="font-size:13px;color:var(--muted)">Detected events affecting ER load</div>
+        <div class="event-pill" id="evOverallPill" style="background:rgba(107,122,144,0.15);color:var(--muted)">Scanning…</div>
+      </div>
+      <div class="event-list" id="eventList">
+        <div style="color:var(--muted);font-size:12px;font-family:var(--mono);padding:20px 0;text-align:center">Scanning event calendar…</div>
+      </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
+        <div class="severity-label">Combined Stress Index (Weather × Events)</div>
+        <div class="severity-track"><div class="severity-fill" id="stress-bar" style="width:0%;background:var(--purple)"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:5px;">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">Calm</span>
+          <span style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--purple)" id="stress-val">--</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">High stress</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- LIVE DATA + GAUGE -->
+  <div class="grid-mid">
+    <div class="card">
+      <div class="card-hd"><span class="dot"></span> All Live Inputs</div>
+      <div class="live-grid">
+        <div class="live-item"><div class="live-icon">📅</div><div><div class="live-label">Day Type</div><div class="live-value" id="ld-daytype">--</div></div></div>
+        <div class="live-item"><div class="live-icon">🕐</div><div><div class="live-label">Shift</div><div class="live-value" id="ld-shift">--</div></div></div>
+        <div class="live-item"><div class="live-icon">🌡️</div><div><div class="live-label">Temperature</div><div class="live-value" id="ld-temp">--</div></div></div>
+        <div class="live-item"><div class="live-icon">🔥</div><div><div class="live-label">Heat Stress</div><div class="live-value" id="ld-heat">--</div></div></div>
+        <div class="live-item"><div class="live-icon">🌊</div><div><div class="live-label">Heavy Rain</div><div class="live-value" id="ld-rain">--</div></div></div>
+        <div class="live-item"><div class="live-icon">🎪</div><div><div class="live-label">Event Risk</div><div class="live-value" id="ld-event">--</div></div></div>
+        <div class="live-item"><div class="live-icon">🏥</div><div><div class="live-label">RF Threshold</div><div class="live-value" id="ld-baseline">--</div></div></div>
+        <div class="live-item"><div class="live-icon">⚡</div><div><div class="live-label">Stress Index</div><div class="live-value" id="ld-stress">--</div></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hd"><span class="dot"></span> Overload Risk Gauge</div>
+      <div class="gauge-wrap">
+        <canvas id="gaugeCanvas" width="220" height="120"></canvas>
+        <div class="risk-score" id="gaugeScore">--</div>
+        <div class="risk-label" id="gaugeLabel" style="background:rgba(107,122,144,0.15);color:var(--muted)">Scanning…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ANALYSIS + FACTORS -->
+  
+      <div class="ai-label"><span>◈</span>Output — Hyderabad ER Live Prediction</div>
+      <div class="ai-bubble" id="aiBubble">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <div class="loading-text">Fetching weather + running RF pipeline…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hd"><span class="dot"></span> Feature Importance</div>
+      <div id="factorBars"><div style="color:var(--muted);font-size:12px;font-family:var(--mono);padding:20px 0">Waiting for model output…</div></div>
+      <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px">
+        <div class="card-hd" style="margin-bottom:10px"><span class="dot"></span> Smart Recommendations</div>
+        <div id="tipsBox"><div style="color:var(--muted);font-size:12px;font-family:var(--mono)">Generating…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FORECAST + LOG -->
+  <div class="grid-bot">
+    <div class="card">
+      <div class="card-hd"><span class="dot"></span> 7-Day Patient Forecast — RF Predicted</div>
+      <div class="chart-wrap"><canvas id="forecastChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><span class="dot"></span> Prediction Log</div>
+      <div id="logBox"><div style="color:var(--muted);font-size:12px;font-family:var(--mono)">Log appears after first prediction…</div></div>
+    </div>
+  </div>
+
+  <!-- MODEL METRICS + FEATURE IMPORTANCES -->
+  <div class="grid-bot">
+    <div class="card">
+      <div class="card-hd"><span class="dot"></span> Trained Model Metrics</div>
+      <div class="tab-row">
+        <button class="tab-btn active" onclick="switchTab('perf')">Performance</button>
+        <button class="tab-btn" onclick="switchTab('fi')">Feature Importance</button>
+        <button class="tab-btn" onclick="switchTab('hist')">History (60d)</button>
+      </div>
+      <div id="tab-perf">
+        <div class="metrics-grid" id="metricsGrid">
+          <div class="metric-box"><div class="mb-val" id="m-mae">--</div><div class="mb-label">MAE (patients/day)</div></div>
+          <div class="metric-box"><div class="mb-val" id="m-r2">--</div><div class="mb-label">R² Score</div></div>
+          <div class="metric-box"><div class="mb-val" id="m-traindays">--</div><div class="mb-label">Training days</div></div>
+          <div class="metric-box"><div class="mb-val" id="m-testdays">--</div><div class="mb-label">Test days</div></div>
+        </div>
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+          <div class="card-hd" style="margin-bottom:8px"><span class="dot"></span> Classifier Report</div>
+          <div id="classReport" style="font-family:var(--mono);font-size:11px;color:var(--muted)">Loading…</div>
+        </div>
+      </div>
+      <div id="tab-fi" style="display:none">
+        <div id="fiList"><div style="color:var(--muted);font-size:12px;font-family:var(--mono)">Loading feature importances…</div></div>
+      </div>
+      <div id="tab-hist" style="display:none">
+        <div style="overflow-x:auto"><table class="hist-table" id="histTable"><thead><tr><th>Date</th><th>Visits</th><th>Wait</th><th>Temp</th><th>Event</th><th>Overloaded</th></tr></thead><tbody id="histBody"><tr><td colspan="6" style="color:var(--muted);text-align:center;padding:20px">Loading history…</td></tr></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hd"><span class="dot"></span> 60-Day Visit Trend</div>
+      <div class="chart-wrap"><canvas id="histChart"></canvas></div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+// ══════════════════════════════════════════════════════
+//  CONFIG
+// ══════════════════════════════════════════════════════
+const API = window.location.origin;  // Flask runs same-origin
+
+// ══════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════
+let S = {
+  weather:     null,
+  events:      [],
+  eventRisk:   { risk: 0, type: 'None' },
+  combinedStress: 0,
+  prediction:  null,
+  forecast:    [],
+  metrics:     null,
+  history:     [],
+  featureImp:  [],
+  modelTrained: false,
+  threshold:   null,
+  chart:       null,
+  histChart:   null,
+  logs:        [],
+  currentTab:  'perf',
+};
+
+// ══════════════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════════════
+function riskColor(level) { return level==='HIGH'?'var(--danger)':level==='MEDIUM'?'var(--warn)':'var(--low)'; }
+function riskBg(level)    { return level==='HIGH'?'rgba(255,77,106,0.15)':level==='MEDIUM'?'rgba(245,166,35,0.15)':'rgba(0,212,170,0.15)'; }
+function setPipe(id,cls,txt){ const el=document.getElementById(id); if(el){el.className=`pipe-status ${cls}`;el.textContent=txt;} }
+function activateTag(id)    { document.getElementById(id)?.classList.add('active'); }
+function switchTab(name)    {
+  S.currentTab = name;
+  ['perf','fi','hist'].forEach(t=>{
+    document.getElementById(`tab-${t}`).style.display = t===name?'block':'none';
+  });
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>{
+    b.classList.toggle('active', ['perf','fi','hist'][i]===name);
+  });
+}
+
+// ══════════════════════════════════════════════════════
+//  WEATHER (Open-Meteo)
+// ══════════════════════════════════════════════════════
+async function fetchWeather() {
+  setPipe('ps-weather','run','Running');
+  try {
+    const lat=17.385, lon=78.4867;
+    const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,precipitation,weather_code&timezone=auto`;
+    const res=await fetch(url), data=await res.json(), c=data.current;
+    S.weather={
+      temp:Math.round(c.temperature_2m), feelsLike:Math.round(c.apparent_temperature),
+      humidity:c.relative_humidity_2m, windSpeed:Math.round(c.wind_speed_10m),
+      precip:c.precipitation, weatherCode:c.weather_code,
+      desc:weatherDesc(c.weather_code), icon:weatherIcon(c.weather_code),
+      severity:weatherSeverity(c.weather_code,c.temperature_2m,c.precipitation,c.relative_humidity_2m)
+    };
+    setPipe('ps-weather','ok','Live ✓'); activateTag('tag-weather');
+  } catch(e) {
+    S.weather={temp:36,feelsLike:40,humidity:45,windSpeed:14,precip:0,weatherCode:2,desc:'Partly Cloudy',icon:'⛅',severity:2};
+    setPipe('ps-weather','ok','Simulated ✓'); activateTag('tag-weather');
+  }
+}
+
+function weatherDesc(code){
+  if(code===0) return 'Clear Sky'; if(code<=3) return 'Partly Cloudy';
+  if(code<=9)  return 'Foggy';     if(code<=29) return 'Drizzle / Rain';
+  if(code<=59) return 'Heavy Drizzle'; if(code<=69) return 'Heavy Rain';
+  if(code<=84) return 'Rain Showers';  if(code<=94) return 'Thunderstorm';
+  return 'Severe Storm';
+}
+function weatherIcon(code){
+  if(code===0) return '☀️'; if(code<=3) return '⛅'; if(code<=9) return '🌫️';
+  if(code<=69) return '🌧️'; if(code<=84) return '⛈️'; return '🌪️';
+}
+function weatherSeverity(code,temp,precip,hum){
+  let s=0;
+  if(temp>=40) s+=4; else if(temp>=37) s+=2; else if(temp<=12) s+=3; else if(temp<=16) s+=1;
+  if(hum>=80) s+=2; else if(hum>=70) s+=1;
+  if(precip>=20) s+=3; else if(precip>=5) s+=1;
+  if(code>=80) s+=2;
+  return Math.min(10,s);
+}
+function weatherInsight(w){
+  let parts=[];
+  if(w.temp>=40)        parts.push('Extreme heat — expect heatstroke and dehydration cases');
+  else if(w.temp>=37)   parts.push('High temperature — higher cardiac and dehydration risk');
+  else if(w.temp<=12)   parts.push('Cold weather increases hypothermia and respiratory cases');
+  if(w.humidity>=75)    parts.push('high humidity amplifies heat stress');
+  if(w.precip>=10)      parts.push('heavy rain raises accident and injury risk');
+  else if(w.precip>0)   parts.push('light rain may cause minor slips');
+  if(w.severity<=2)     return 'Weather conditions are mild today. No unusual ER impact expected from weather alone.';
+  return parts.length ? parts.join(' · ')+'.' : 'Moderate conditions.';
+}
+
+// ══════════════════════════════════════════════════════
+//  EVENTS (client-side calendar scan)
+// ══════════════════════════════════════════════════════
+function detectNearbyEvents() {
+  setPipe('ps-event','run','Running');
+  const now=new Date(), month=now.getMonth()+1, day=now.getDate(), weekday=now.getDay();
+  const evts=[];
+  if(month===10&&day>=5&&day<=24)   evts.push({icon:'🪔',name:'Dussehra / Navratri Season',impact:'Crowd gatherings, fireworks injuries',score:3});
+  if((month===10&&day>=25)||(month===11&&day<=15)) evts.push({icon:'🎆',name:'Diwali Season',impact:'Firecracker burns, eye injuries',score:4});
+  if(month===1&&day>=12&&day<=16)   evts.push({icon:'🪁',name:'Sankranti',impact:'Kite flying accidents, glass thread cuts',score:3});
+  if(month===3&&day>=20&&day<=31)   evts.push({icon:'🎨',name:'Holi / Ugadi Festival',impact:'Chemical color reactions, crowd trauma',score:3});
+  if(month===4&&day>=1&&day<=10)    evts.push({icon:'🌸',name:'Ugadi / Telugu New Year',impact:'Festive gatherings, GI complaints',score:2});
+  if(month>=3&&month<=6)            evts.push({icon:'🏏',name:'IPL Cricket Season (Hyd)',impact:'Stadium crowds, alcohol-related cases',score:2});
+  if(month>=7&&month<=9)            evts.push({icon:'🌊',name:'Monsoon Season Active',impact:'Flooding injuries, waterborne disease',score:3});
+  if(month>=4&&month<=6)            evts.push({icon:'☀️',name:'Summer Peak (Hyderabad)',impact:'Heatstroke surge, outdoor emergencies',score:month===5?4:2});
+  if(month===2&&day>=1&&day<=14)    evts.push({icon:'🏃',name:'Hyderabad Marathon Season',impact:'Exhaustion, fractures, cardiac events',score:3});
+  if(weekday===6&&now.getHours()>=10) evts.push({icon:'🌙',name:'Saturday Night Peak',impact:'Road accidents, alcohol cases',score:3});
+  else if(weekday===5&&now.getHours()>=17) evts.push({icon:'🎉',name:'Friday Evening Surge',impact:'Weekend-start events, traffic accidents',score:2});
+  if(evts.length===0){
+    const dayNames=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const baseRisk=[2,1,1,1,1,2,3][weekday];
+    evts.push({icon:weekday>=5?'📅':'💼',name:`${dayNames[weekday]} — ${weekday>=5?'Weekend':'Weekday'} Baseline`,impact:weekday>=5?'Weekends see 15-20% higher ER demand':'Normal weekday demand',score:baseRisk});
+  }
+  const totalRisk=Math.min(5, evts.reduce((s,e)=>s+e.score,0)/Math.max(1,evts.length));
+  S.events=evts; S.eventRisk={risk:parseFloat(totalRisk.toFixed(1)),type:evts[0]?.name||'None'};
+  S.combinedStress=parseFloat(((S.weather?.severity||0)+totalRisk*1.5).toFixed(1));
+  setPipe('ps-event','ok',`${evts.length} events ✓`); activateTag('tag-events');
+}
+
+// ══════════════════════════════════════════════════════
+//  CALL FLASK RANDOM FOREST API
+// ══════════════════════════════════════════════════════
+async function callRFPredict() {
+  setPipe('ps-ml','run','Running'); setPipe('ps-api','run','Calling');
+  if(!S.modelTrained) { setPipe('ps-ml','wait','No model'); return false; }
+  const w=S.weather||{};
+  try {
+    const res=await fetch(`${API}/api/predict`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        temperature_c:    w.temp||36,
+        humidity_pct:     w.humidity||45,
+        precipitation_mm: w.precip||0,
+      })
+    });
+    const d=await res.json();
+    if(d.error){ setPipe('ps-ml','wait',d.error); return false; }
+    S.prediction=d; setPipe('ps-ml','ok','Done ✓'); setPipe('ps-api','ok','200 OK');
+    activateTag('tag-rf'); activateTag('tag-flask');
+    return true;
+  } catch(e){ setPipe('ps-ml','wait','Error'); setPipe('ps-api','wait','Failed'); return false; }
+}
+
+async function callForecast() {
+  setPipe('ps-forecast','run','Running');
+  try {
+    const res=await fetch(`${API}/api/forecast`);
+    S.forecast=await res.json();
+    setPipe('ps-forecast','ok','Done ✓');
+  } catch(e){ setPipe('ps-forecast','wait','Error'); S.forecast=[]; }
+}
+
+async function loadMetrics() {
+  try {
+    const res=await fetch(`${API}/api/metrics`);
+    S.metrics=await res.json();
+    const el_mae=document.getElementById('m-mae');
+    const el_r2=document.getElementById('m-r2');
+    const el_tr=document.getElementById('m-traindays');
+    const el_te=document.getElementById('m-testdays');
+    if(S.metrics.mae!==undefined){ el_mae.textContent=S.metrics.mae; el_r2.textContent=S.metrics.r2; el_tr.textContent=S.metrics.train_days; el_te.textContent=S.metrics.test_days; }
+    // Classifier report
+    if(S.metrics.classification_report){
+      const cr=S.metrics.classification_report;
+      const ov=cr['Overloaded']||{};
+      document.getElementById('classReport').innerHTML=`
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px">
+          <div style="background:var(--surface3);border-radius:8px;padding:10px;text-align:center">
+            <div style="font-size:16px;font-weight:600;color:var(--accent2)">${((ov.precision||0)*100).toFixed(0)}%</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">Precision</div>
+          </div>
+          <div style="background:var(--surface3);border-radius:8px;padding:10px;text-align:center">
+            <div style="font-size:16px;font-weight:600;color:var(--warn)">${((ov.recall||0)*100).toFixed(0)}%</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">Recall</div>
+          </div>
+          <div style="background:var(--surface3);border-radius:8px;padding:10px;text-align:center">
+            <div style="font-size:16px;font-weight:600;color:var(--purple)">${((ov['f1-score']||0)*100).toFixed(0)}%</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">F1-Score</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;font-size:10px;color:var(--muted)">Test period: ${S.metrics.test_start||''} → ${S.metrics.test_end||''}</div>`;
+    }
+  } catch(e){}
+}
+
+async function loadFeatureImportance() {
+  try {
+    const res=await fetch(`${API}/api/feature_importance`);
+    S.featureImp=await res.json();
+    if(!Array.isArray(S.featureImp)) return;
+    const top=S.featureImp.slice(0,12);
+    const maxVal=top[0]?.importance||1;
+    const NEW_FEATS=['temperature_c','humidity_pct','precipitation_mm','weather_severity','is_extreme_weather','is_heat_stress','is_heavy_rain','event_risk_score','is_major_event','combined_stress'];
+    document.getElementById('fiList').innerHTML=top.map((f,i)=>{
+      const pct=Math.round((f.importance/maxVal)*100);
+      const color=i<3?'var(--accent)':i<6?'var(--purple)':'var(--accent2)';
+      const isNew=NEW_FEATS.includes(f.feature)?'<span style="background:rgba(167,139,250,0.15);border:1px solid rgba(167,139,250,0.3);color:var(--purple);font-size:8px;padding:1px 5px;border-radius:4px;margin-left:4px">NEW</span>':'';
+      return `<div class="fi-row">
+        <div class="fi-name">${f.feature}${isNew}</div>
+        <div class="fi-track"><div class="fi-fill" style="width:${pct}%;background:${color}"></div></div>
+        <div class="fi-val">${(f.importance*100).toFixed(1)}%</div>
+      </div>`;
+    }).join('');
+    // Also populate top-5 in factor bars area
+    renderFactorBars(top.slice(0,5));
+  } catch(e){}
+}
+
+async function loadHistory() {
+  try {
+    const res=await fetch(`${API}/api/history`);
+    S.history=await res.json();
+    activateTag('tag-hist');
+    // Table
+    document.getElementById('histBody').innerHTML=S.history.slice(-20).reverse().map(r=>{
+      const ov=r.is_overloaded;
+      const color=ov?'var(--danger)':'var(--accent2)';
+      return `<tr>
+        <td>${r.date}</td>
+        <td style="font-weight:600">${r.total_visits}</td>
+        <td>${Math.round(r.avg_wait_time)}m</td>
+        <td>${r.temperature_c}°C</td>
+        <td>${r.event_risk_score}/5</td>
+        <td style="color:${color}">${ov?'YES':'NO'}</td>
+      </tr>`;
+    }).join('');
+    // History chart
+    renderHistChart();
+  } catch(e){}
+}
+
+// ══════════════════════════════════════════════════════
+//  RENDER ALL
+// ══════════════════════════════════════════════════════
+function renderAll() {
+  setPipe('ps-alert','run','Rendering');
+  const p=S.prediction, w=S.weather;
+  if(!p||!w) return;
+
+  const tempColor=w.temp>=38?'var(--danger)':w.temp>=35?'var(--warn)':w.temp<=15?'var(--accent)':'var(--accent2)';
+
+  // Top metrics
+  document.getElementById('metTemp').textContent=`${w.temp}°C`;
+  document.getElementById('metTemp').style.color=tempColor;
+  document.getElementById('metWeatherDesc').textContent=w.desc;
+  document.getElementById('metPatients').textContent=p.predicted_visits;
+  document.getElementById('metRisk').textContent=p.risk_score;
+  document.getElementById('metRisk').style.color=riskColor(p.risk_level);
+  document.getElementById('metStress').textContent=S.combinedStress.toFixed(1);
+
+  // Weather card
+  document.getElementById('w-temp').textContent=`${w.temp}°C`;
+  document.getElementById('w-temp').style.color=tempColor;
+  document.getElementById('w-feels').textContent=`${w.feelsLike}°C`;
+  document.getElementById('w-hum').textContent=`${w.humidity}%`;
+  document.getElementById('w-precip').textContent=`${w.precip} mm`;
+  document.getElementById('w-wind').textContent=`${w.windSpeed} km/h`;
+  document.getElementById('w-cond').textContent=w.desc;
+  document.getElementById('w-condIcon').textContent=w.icon||'☁️';
+  const sevPct=w.severity*10;
+  const sevColor=w.severity>=7?'var(--danger)':w.severity>=4?'var(--warn)':'var(--accent2)';
+  document.getElementById('w-sev-bar').style.cssText=`width:${sevPct}%;background:${sevColor}`;
+  document.getElementById('w-sev-label').textContent=`${w.severity}/10`;
+  document.getElementById('w-sev-label').style.color=sevColor;
+  document.getElementById('w-insight').textContent=weatherInsight(w);
+
+  // Events card
+  const ev=S.eventRisk.risk;
+  const evColor=ev>=3?'var(--danger)':ev>=2?'var(--warn)':'var(--low)';
+  const evBg=ev>=3?'rgba(255,77,106,0.15)':ev>=2?'rgba(245,166,35,0.15)':'rgba(0,212,170,0.15)';
+  const evTxt=ev>=3?'High Event Risk':ev>=2?'Moderate Events':'Low Event Activity';
+  const pill=document.getElementById('evOverallPill');
+  pill.textContent=evTxt; pill.style.background=evBg; pill.style.color=evColor;
+  document.getElementById('eventList').innerHTML=S.events.map(e=>{
+    const c=e.score>=3?'var(--danger)':e.score>=2?'var(--warn)':'var(--low)';
+    const bg=e.score>=3?'rgba(255,77,106,0.12)':e.score>=2?'rgba(245,166,35,0.12)':'rgba(0,212,170,0.12)';
+    return `<div class="event-row"><div class="er-icon">${e.icon}</div><div style="flex:1"><div class="er-name">${e.name}</div><div class="er-impact">${e.impact}</div></div><div class="er-score" style="background:${bg};color:${c}">${e.score}/5</div></div>`;
+  }).join('');
+  const cs=S.combinedStress;
+  document.getElementById('stress-bar').style.cssText=`width:${Math.min(100,(cs/17.5)*100)}%;background:var(--purple)`;
+  document.getElementById('stress-val').textContent=`${cs.toFixed(1)} / 17.5`;
+
+  // Live inputs
+  const now=new Date(), wd=now.getDay(), h=now.getHours();
+  const shift=h<6?'Night':h<12?'Morning':h<18?'Afternoon':'Evening';
+  document.getElementById('ld-daytype').textContent=wd>=5?'Weekend':'Weekday';
+  document.getElementById('ld-shift').textContent=shift;
+  document.getElementById('ld-temp').textContent=`${w.temp}°C`;
+  document.getElementById('ld-heat').textContent=w.temp>=38?'🔴 YES':'🟢 NO';
+  document.getElementById('ld-rain').textContent=w.precip>=10?'🔴 YES':'🟢 NO';
+  document.getElementById('ld-event').textContent=`${S.eventRisk.risk}/5`;
+  document.getElementById('ld-baseline').textContent=S.threshold||'--';
+  document.getElementById('ld-stress').textContent=cs.toFixed(1);
+
+  // Alert strip
+  const strip=document.getElementById('alertStrip');
+  strip.className=`alert-strip ${p.risk_level.toLowerCase()}`;
+  document.getElementById('alertIcon').textContent=p.risk_level==='HIGH'?'🚨':p.risk_level==='MEDIUM'?'⚠️':'✅';
+  const alertTitles={HIGH:'High Overload Risk — Activate Surge Protocol',MEDIUM:'Moderate Risk — Monitor & Prepare',LOW:'Normal Operations Expected'};
+  document.getElementById('alertTitle').textContent=alertTitles[p.risk_level];
+  const fi=p.features_used||{};
+  document.getElementById('alertDesc').textContent=`RF Model: ${p.risk_score}/100 risk (${p.risk_level}). Predicted ${p.predicted_visits} patients. Weather: ${w.temp}°C, ${w.desc} (severity ${fi.weather_severity}/10). Event risk: ${fi.event_risk_score||S.eventRisk.risk}/5. Combined stress: ${fi.combined_stress||cs}.`;
+
+  // Gauge
+  drawGauge(p.risk_score, p.risk_level);
+  document.getElementById('gaugeScore').textContent=p.risk_score;
+  document.getElementById('gaugeScore').style.color=riskColor(p.risk_level);
+  document.getElementById('gaugeLabel').textContent=`${p.risk_level} RISK`;
+  document.getElementById('gaugeLabel').style.background=riskBg(p.risk_level);
+  document.getElementById('gaugeLabel').style.color=riskColor(p.risk_level);
+
+  // Analysis bubble
+  document.getElementById('aiBubble').innerHTML=`<p style="font-size:13px;line-height:1.8">
+    Today's model evaluated <strong>27 input features</strong> using historical Hyderabad ER data. features</strong> against
+    historical Hyderabad ER data. Current weather: <strong>${w.desc}</strong> at <strong>${w.temp}°C</strong> 
+    (humidity ${w.humidity}%, precipitation ${w.precip}mm) with a weather severity score of 
+    <strong>${fi.weather_severity||w.severity}/10</strong>. 
+    The event scan detected <strong>"${S.eventRisk.type}"</strong> with a risk score of 
+    <strong>${fi.event_risk_score||S.eventRisk.risk}/5</strong>, producing a combined stress index of 
+    <strong>${fi.combined_stress||cs}</strong>. 
+    The model predicts <strong>${p.predicted_visits} patients</strong> today with a 
+    <strong>${p.risk_score}% overload probability</strong> — classified as 
+    <strong style="color:${riskColor(p.risk_level)}">${p.risk_level} RISK</strong>.
+    ${p.risk_level==='HIGH'?'Surge protocols recommended immediately.':p.risk_level==='MEDIUM'?'Monitor closely and prepare overflow capacity.':'Standard staffing is sufficient for today.'}
+  </p>`;
+
+  // Recommendations
+  const tips={HIGH:[
+    {icon:'🚨',title:'Activate Surge Protocol',desc:'Call all on-call staff and open overflow beds immediately.'},
+    {icon:'🚑',title:'Pre-position Ambulances',desc:'Station extra units near event venues and weather-affected areas.'},
+    {icon:'💊',title:'Restock Priority Supplies',desc:'Prepare IV fluids, burn kits, trauma trays, and respiratory meds.'}],
+    MEDIUM:[
+    {icon:'👩‍⚕️',title:'Add Evening Staff',desc:'Schedule 2–3 extra nurses for the busiest shift.'},
+    {icon:'🛏️',title:'Prep Overflow Bays',desc:'Open the secondary waiting area as a precaution.'},
+    {icon:'📢',title:'Alert On-Call Team',desc:'Notify backup doctors to be reachable within 30 minutes.'}],
+    LOW:[
+    {icon:'✅',title:'Normal Staffing',desc:'No changes needed — maintain standard rotations.'},
+    {icon:'📋',title:'Routine Supply Check',desc:'Confirm adequate supplies for the week ahead.'},
+    {icon:'👁️',title:'Stay Alert',desc:'Monitor weather and event feeds for any sudden changes.'}]};
+  document.getElementById('tipsBox').innerHTML=(tips[p.risk_level]||tips.LOW).map(r=>`
+    <div class="tip-row"><div class="tip-icon">${r.icon}</div><div><div class="tip-title">${r.title}</div><div class="tip-desc">${r.desc}</div></div></div>`).join('');
+
+  // Forecast chart from backend
+  if(Array.isArray(S.forecast)&&S.forecast.length) renderForecastChart(S.forecast);
+
+  // Log
+  addLog(p, w);
+
+  setPipe('ps-alert','ok','Live ✓');
+  document.getElementById('lastUpdate').textContent=`Updated: ${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`;
+}
+
+// ══════════════════════════════════════════════════════
+//  FACTOR BARS (from feature importance)
+// ══════════════════════════════════════════════════════
+function renderFactorBars(features) {
+  const factorColors=['var(--accent)','var(--purple)','var(--danger)','var(--warn)','var(--accent2)'];
+  const maxImp=features[0]?.importance||0.001;
+  document.getElementById('factorBars').innerHTML=features.map((f,i)=>`
+    <div class="factor-row">
+      <div class="factor-name">${f.feature}</div>
+      <div class="factor-track"><div class="factor-fill" style="width:${Math.round((f.importance/maxImp)*100)}%;background:${factorColors[i%factorColors.length]}"></div></div>
+      <div class="factor-pct">${(f.importance*100).toFixed(1)}%</div>
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════════════════════
+//  GAUGE
+// ══════════════════════════════════════════════════════
+function drawGauge(score, level) {
+  const canvas=document.getElementById('gaugeCanvas');
+  if(!canvas) return;
+  const ctx=canvas.getContext('2d');
+  canvas.width=220; canvas.height=120;
+  ctx.clearRect(0,0,220,120);
+  const cx=110,cy=105,r=85;
+  ctx.beginPath(); ctx.arc(cx,cy,r,Math.PI,0); ctx.lineWidth=14; ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineCap='butt'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,r,Math.PI,Math.PI*1.35);  ctx.strokeStyle='#00d4aa'; ctx.lineWidth=14; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,r,Math.PI*1.35,Math.PI*1.65); ctx.strokeStyle='#f5a623'; ctx.lineWidth=14; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,r,Math.PI*1.65,0);         ctx.strokeStyle='#ff4d6a'; ctx.lineWidth=14; ctx.stroke();
+  const angle=Math.PI+(score/100)*Math.PI;
+  const nx=cx+Math.cos(angle)*68, ny=cy+Math.sin(angle)*68;
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(nx,ny); ctx.lineWidth=3; ctx.strokeStyle='#e8edf5'; ctx.lineCap='round'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,6,0,Math.PI*2); ctx.fillStyle='#e8edf5'; ctx.fill();
+}
+
+// ══════════════════════════════════════════════════════
+//  FORECAST CHART
+// ══════════════════════════════════════════════════════
+function renderForecastChart(forecast) {
+  const ctx=document.getElementById('forecastChart').getContext('2d');
+  if(S.chart) S.chart.destroy();
+  const colors=forecast.map(f=>f.risk_level==='HIGH'||f.risk==='HIGH'?'#ff4d6a':f.risk_level==='MEDIUM'||f.risk==='MEDIUM'?'#f5a623':'#00d4aa');
+  S.chart=new Chart(ctx,{
+    type:'bar',
+    data:{
+      labels:forecast.map(f=>f.day),
+      datasets:[{label:'Predicted Patients',data:forecast.map(f=>f.predicted_visits||f.patients),backgroundColor:colors.map(c=>c+'55'),borderColor:colors,borderWidth:2,borderRadius:6,borderSkipped:false}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#6b7a90',font:{size:11,family:"'IBM Plex Mono'"}}},
+              y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#6b7a90',font:{size:11,family:"'IBM Plex Mono'"}},min:0}}}
+  });
+}
+
+// ══════════════════════════════════════════════════════
+//  HISTORY CHART
+// ══════════════════════════════════════════════════════
+function renderHistChart() {
+  const ctx=document.getElementById('histChart').getContext('2d');
+  if(S.histChart) S.histChart.destroy();
+  const data=S.history.slice(-30);
+  S.histChart=new Chart(ctx,{
+    type:'line',
+    data:{
+      labels:data.map(d=>d.date.slice(5)),
+      datasets:[
+        {label:'Total Visits',data:data.map(d=>d.total_visits),borderColor:'#3b8bff',backgroundColor:'rgba(59,139,255,0.1)',borderWidth:2,tension:0.3,fill:true,pointRadius:2},
+        {label:'Overload Threshold',data:data.map(()=>S.threshold),borderColor:'rgba(255,77,106,0.5)',borderWidth:1,borderDash:[4,4],pointRadius:0}
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,labels:{color:'#6b7a90',font:{size:10,family:"'IBM Plex Mono'"},boxWidth:12}}},
+      scales:{x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#6b7a90',font:{size:10,family:"'IBM Plex Mono'"},maxTicksLimit:8}},
+              y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#6b7a90',font:{size:10,family:"'IBM Plex Mono'"}}}}}
+  });
+}
+
+// ══════════════════════════════════════════════════════
+//  LOG
+// ══════════════════════════════════════════════════════
+function addLog(p, w) {
+  S.logs.unshift({time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
+    score:p.risk_score, level:p.risk_level, patients:p.predicted_visits,
+    weather:w.desc, event:S.eventRisk.type.split(' ').slice(0,3).join(' ')});
+  if(S.logs.length>8) S.logs.pop();
+  document.getElementById('logBox').innerHTML=S.logs.map(l=>`
+    <div class="log-row">
+      <div class="log-time">${l.time}</div>
+      <div class="log-msg"><strong style="color:${riskColor(l.level)}">${l.score}/100</strong> · ${l.patients} patients · ${l.weather} · ${l.event}</div>
+      <div class="log-badge" style="background:${riskBg(l.level)};color:${riskColor(l.level)}">${l.level}</div>
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════════════════════
+//  UPLOAD + RETRAIN
+// ══════════════════════════════════════════════════════
+async function uploadCSV(input) {
+  const file=input.files[0]; if(!file) return;
+  setBanner('loading','📂 Uploading and training model…','This may take 30–60 seconds');
+  const fd=new FormData(); fd.append('file',file);
+  try {
+    const res=await fetch(`${API}/api/upload`,{method:'POST',body:fd});
+    const d=await res.json();
+    if(d.error){ setBanner('error','❌ Upload failed: '+d.error,'Check CSV format and column names'); return; }
+    S.modelTrained=true; S.threshold=d.metrics?.overload_threshold;
+    await loadMetrics(); await loadFeatureImportance(); await loadHistory();
+    await fullRefresh();
+  } catch(e){ setBanner('error','❌ Network error','Make sure Flask backend is running on port 5000'); }
+}
+
+async function retrain() {
+  setBanner('loading','🔄 Retraining model…','Using existing Hospital_ER_Data.csv');
+  try {
+    const res=await fetch(`${API}/api/train`,{method:'POST'});
+    const d=await res.json();
+    if(d.error){ setBanner('error','❌ '+d.error,'Upload CSV first via the button above'); return; }
+    S.modelTrained=true; S.threshold=d.metrics?.overload_threshold;
+    setBanner('trained',`✅ Model retrained successfully`,`MAE: ${d.metrics?.mae} · R²: ${d.metrics?.r2}`);
+    await loadMetrics(); await loadFeatureImportance(); await fullRefresh();
+  } catch(e){ setBanner('error','❌ Network error','Make sure Flask is running'); }
+}
+
+function setBanner(type, title, sub) {
+  const banner=document.getElementById('modelBanner');
+  const t=document.getElementById('bannerTitle');
+  const s=document.getElementById('bannerSub');
+  banner.className=`model-banner${type==='trained'?' trained':type==='error'?' error':''}`;
+  t.textContent=title; s.textContent=sub;
+}
+
+// ══════════════════════════════════════════════════════
+//  MODEL STATUS CHECK
+// ══════════════════════════════════════════════════════
+async function checkModelStatus() {
+  try {
+    const res=await fetch(`${API}/api/status`);
+    const d=await res.json();
+    S.modelTrained=d.trained; S.threshold=d.threshold;
+    if(d.trained){
+      setBanner('trained',`✅ model ready (${d.total_days} days of training data)`,`Overload threshold: ≥${d.threshold} patients/day · Last trained: ${d.trained_at?.slice(0,16)||'cached'}`);
+    } else {
+      setBanner('','⚙️ No trained model found','Upload Hospital_ER_Data.csv to train the Model');
+    }
+    return d.trained;
+  } catch(e){
+    setBanner('error','❌ Cannot reach Flask backend','Run: python backend/app.py — then refresh this page');
+    return false;
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  FULL REFRESH ORCHESTRATOR
+// ══════════════════════════════════════════════════════
+async function fullRefresh() {
+  ['ps-weather','ps-event','ps-time','ps-ml','ps-api','ps-forecast','ps-alert'].forEach(id=>setPipe(id,'wait','Waiting'));
+  document.querySelectorAll('.src-tag').forEach(t=>t.classList.remove('active'));
+  const btn=document.getElementById('refreshBtn');
+  btn.classList.add('spinning'); btn.disabled=true;
+  try {
+    await fetchWeather();
+    detectNearbyEvents();
+    setPipe('ps-time','ok','Done ✓');
+    const ok=await callRFPredict();
+    if(ok){
+      await callForecast();
+      renderAll();
+    } else {
+      // Show weather-only state if no model
+      document.getElementById('alertTitle').textContent='Model not ready — upload CSV to enable predictions';
+      document.getElementById('alertDesc').textContent=`Weather loaded: ${S.weather?.temp||'--'}°C, ${S.weather?.desc||''}. Upload Hospital_ER_Data.csv to train the model.`;
+      // Still render weather + events
+      if(S.weather){
+        const w=S.weather;
+        const tempColor=w.temp>=38?'var(--danger)':w.temp>=35?'var(--warn)':'var(--accent2)';
+        document.getElementById('metTemp').textContent=`${w.temp}°C`;
+        document.getElementById('metTemp').style.color=tempColor;
+        document.getElementById('metWeatherDesc').textContent=w.desc;
+        document.getElementById('w-temp').textContent=`${w.temp}°C`;
+        document.getElementById('w-feels').textContent=`${w.feelsLike}°C`;
+        document.getElementById('w-hum').textContent=`${w.humidity}%`;
+        document.getElementById('w-precip').textContent=`${w.precip} mm`;
+        document.getElementById('w-wind').textContent=`${w.windSpeed} km/h`;
+        document.getElementById('w-cond').textContent=w.desc;
+        document.getElementById('w-condIcon').textContent=w.icon;
+        document.getElementById('w-sev-bar').style.width=`${w.severity*10}%`;
+        document.getElementById('w-sev-label').textContent=`${w.severity}/10`;
+        document.getElementById('w-insight').textContent=weatherInsight(w);
+        // Events
+        document.getElementById('eventList').innerHTML=S.events.map(e=>{
+          const c=e.score>=3?'var(--danger)':e.score>=2?'var(--warn)':'var(--low)';
+          const bg=e.score>=3?'rgba(255,77,106,0.12)':e.score>=2?'rgba(245,166,35,0.12)':'rgba(0,212,170,0.12)';
+          return `<div class="event-row"><div class="er-icon">${e.icon}</div><div style="flex:1"><div class="er-name">${e.name}</div><div class="er-impact">${e.impact}</div></div><div class="er-score" style="background:${bg};color:${c}">${e.score}/5</div></div>`;
+        }).join('');
+      }
+    }
+  } catch(e){ console.error(e); }
+  btn.classList.remove('spinning'); btn.disabled=false;
+}
+
+// ══════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', async ()=>{
+  await checkModelStatus();
+  if(S.modelTrained){
+    await loadMetrics();
+    await loadFeatureImportance();
+    await loadHistory();
+  }
+  await fullRefresh();
+  // Auto-refresh every 10 minutes
+  setInterval(fullRefresh, 10*60*1000);
+  // Clock
+  setInterval(()=>{
+    document.getElementById('lastUpdate').textContent=`Updated: ${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`;
+  }, 60000);
+});
+</script>
+</body>
+</html>
